@@ -23,6 +23,7 @@ class VectorStoreConfig(BaseModel):
         "opensearch": "OpenSearchConfig",
         "supabase": "SupabaseConfig",
         "weaviate": "WeaviateConfig",
+        "kuzu": "KuzuConfig",
     }
 
     @model_validator(mode="after")

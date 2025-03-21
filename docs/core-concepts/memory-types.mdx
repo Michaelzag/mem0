@@ -46,3 +46,22 @@ Mem0's long-term memory system builds on these foundations by:
 1. Using vector embeddings to store and retrieve semantic information
 2. Maintaining user-specific context across sessions
 3. Implementing efficient retrieval mechanisms for relevant past interactions
+
+## Graph Memory
+
+Graph memory represents knowledge as interconnected nodes and relationships, similar to how humans form mental models. This type of memory offers:
+
+- **Relationship-based knowledge**: Understanding how entities relate to each other
+- **Contextual retrieval**: Finding information through relationship traversals
+- **Flexible querying**: Connecting topics in ways not possible with vector searches alone
+
+### Available Implementations
+
+Mem0 provides two graph memory implementations:
+
+| Implementation | Type | Benefits | Use Case |
+|----------------|------|----------|----------|
+| Neo4j | External database | Powerful query capabilities, scalable for large datasets | Production deployments with complex graph needs |
+| Kuzu | Embedded database | Simplified deployment, combined vector+graph capabilities | Lightweight applications, development environments |
+
+The Kuzu implementation stores both entity nodes and their relationships in a single embedded database, eliminating the need for external dependencies while providing seamless integration with vector-based memory.

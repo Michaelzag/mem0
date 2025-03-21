@@ -1,0 +1,59 @@
+[Kuzu](https://kuzudb.com/) is an embedded graph database with native vector capabilities, providing a lightweight and high-performance solution for both vector storage and graph operations in a single database.
+
+### Usage
+
+```python
+import os
+from mem0 import Memory
+
+os.environ["OPENAI_API_KEY"] = "sk-xx"
+
+config = {
+    "vector_store": {
+        "provider": "kuzu",
+        "config": {
+            "collection_name": "memories",
+            "db_path": "./kuzu_db",
+            "vector_dimension": 1536,
+            "distance_metric": "cosine"
+        }
+    }
+}
+
+m = Memory.from_config(config)
+messages = [
+    {"role": "user", "content": "I'm planning to watch a movie tonight. Any recommendations?"},
+    {"role": "assistant", "content": "How about a thriller movies? They can be quite engaging."},
+    {"role": "user", "content": "I'm not a big fan of thriller movies but I love sci-fi movies."},
+    {"role": "assistant", "content": "Got it! I'll avoid thriller recommendations and suggest sci-fi movies in the future."}
+]
+m.add(messages, user_id="alice", metadata={"category": "movies"})
+```
+
+### Config
+
+Here are the parameters available for configuring Kuzu:
+
+| Parameter | Description | Default Value |
+| --- | --- | --- |
+| `collection_name` | Name for the Kuzu node table used as collection | `memories` |
+| `db_path` | Path to the Kuzu database directory | `./kuzu_db` |
+| `vector_dimension` | Dimension of vectors to store | `1536` |
+| `distance_metric` | Distance metric to use for similarity search (cosine, euclidean, dot) | `cosine` |
+
+### Benefits
+
+- **Simplified Deployment**: As an embedded database, Kuzu runs within your application process with no external dependencies
+- **Combined Vector and Graph Capabilities**: Store both vector embeddings and graph relationships in the same database
+- **Efficient Vector Search**: Utilizes optimized vector indexes for fast similarity search
+- **Transaction Support**: Provides ACID-compliant transactions for data consistency
+- **Performance**: Lightweight and optimized for speed and memory efficiency
+
+### Implementation Details
+
+Kuzu vector store implementation uses a node table with three fields:
+- `id`: STRING PRIMARY KEY - unique identifier for each vector
+- `vector`: FLOAT[] - the actual vector data
+- `payload`: STRING - JSON serialized metadata
+
+All vector operations (insert, search, delete, update) utilize Kuzu's Cypher query capabilities, with optimized vector similarity search using the configured distance metric.

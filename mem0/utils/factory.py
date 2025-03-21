@@ -60,6 +60,37 @@ class EmbedderFactory:
             raise ValueError(f"Unsupported Embedder provider: {provider_name}")
 
 
+class GraphMemoryFactory:
+    """Factory for creating graph memory implementations."""
+    
+    provider_to_class = {
+        "neo4j": "mem0.memory.graph_memory.MemoryGraph",
+        "kuzu": "mem0.memory.graph_memory_kuzu.KuzuMemoryGraph",
+    }
+    
+    @classmethod
+    def create(cls, provider_name, config):
+        """
+        Create a graph memory instance based on provider name.
+        
+        Args:
+            provider_name (str): The name of the graph memory provider
+            config: Configuration object for the graph memory
+            
+        Returns:
+            A graph memory instance
+            
+        Raises:
+            ValueError: If the provider is not supported
+        """
+        class_type = cls.provider_to_class.get(provider_name)
+        if class_type:
+            graph_memory_instance = load_class(class_type)
+            return graph_memory_instance(config)
+        else:
+            raise ValueError(f"Unsupported GraphMemory provider: {provider_name}")
+
+
 class VectorStoreFactory:
     provider_to_class = {
         "qdrant": "mem0.vector_stores.qdrant.Qdrant",
@@ -74,6 +105,7 @@ class VectorStoreFactory:
         "opensearch": "mem0.vector_stores.opensearch.OpenSearchDB",
         "supabase": "mem0.vector_stores.supabase.Supabase",
         "weaviate": "mem0.vector_stores.weaviate.Weaviate",
+        "kuzu": "mem0.vector_stores.kuzu.KuzuVectorStore",
     }
 
     @classmethod
