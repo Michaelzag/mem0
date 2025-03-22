@@ -5,7 +5,7 @@
 ## Technology Stack
 
 1. **Kuzu**
-   - Version: Latest stable release
+   - Version: v0.8.2 or later
    - Purpose: Embedded graph database with vector search capabilities
    - Role: Primary database for both vector and graph storage
    - Repository: https://github.com/kuzudb/kuzu
@@ -23,7 +23,7 @@
    - Primary implementation language
 
 4. **Neo4j**
-   - Current graph database implementation
+   - Alternative graph database implementation
    - Used as reference for graph operations and Cypher compatibility
 
 ## Technical Constraints
@@ -47,12 +47,13 @@
 ## Dependencies
 
 1. **Core Dependencies**
-   - Kuzu Python package and its requirements
+   - Kuzu Python package (v0.8.2 or later) and its requirements
    - All existing mem0 dependencies
 
 2. **Optional Dependencies**
    - Performance monitoring tools
    - Benchmarking utilities
+   - rank_bm25 for improved search results ranking
 
 3. **Development Dependencies**
    - Testing frameworks
@@ -77,9 +78,23 @@
 ## Migration Considerations
 
 1. **Compatibility Layers**
-   - May need temporary compatibility between Neo4j and Kuzu
-   - Need migration tooling for existing data
+   - Migration guide provided for Neo4j to Kuzu transitions
+   - Documentation for migrating existing data
 
 2. **Version Support**
-   - Support Kuzu version evolution
-   - Handle potential API changes
+   - API compatibility with Kuzu v0.8.2 verified
+   - Ensures forward compatibility with future versions
+
+## Configuration System
+
+1. **Configuration Classes**
+   - KuzuConfig for vector store configuration
+   - KuzuGraphConfig for graph memory configuration
+
+2. **Validation System**
+   - Provider-specific validation for different storage backends
+   - Clear error messages for configuration issues
+
+3. **Integration with mem0**
+   - Clean API without workarounds
+   - Proper factory integration for dynamic implementation switching

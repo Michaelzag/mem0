@@ -1,15 +1,20 @@
 from typing import Any, Dict, Optional
+from typing import ClassVar
 
 from pydantic import BaseModel, Field, model_validator
 
+# Try to import Kuzu at module level but don't fail if not available
+try:
+    import kuzu
+    KUZU_AVAILABLE = True
+except ImportError:
+    KUZU_AVAILABLE = False
 
 class KuzuConfig(BaseModel):
     """Configuration for Kuzu vector store."""
     
-    try:
-        import kuzu
-    except ImportError:
-        raise ImportError("The 'kuzu' library is required. Please install it using 'pip install kuzu'.")
+    # Store reference to kuzu module as ClassVar to avoid field detection
+    kuzu_module: ClassVar = None
 
     collection_name: str = Field(
         "memories", description="Name for the Kuzu node table used as collection"
