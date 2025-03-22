@@ -31,6 +31,13 @@ psycopg2-binary = "^2.9.10"
 [tool.poetry.extras]
 graph = ["langchain-neo4j", "neo4j", "rank-bm25"]
 
+[tool.poetry.group.vector_stores]
+optional = true
+
+[tool.poetry.group.vector_stores.dependencies]
+kuzu = "^0.8.2"
+aiohttp = "^3.11.7"
+
 [tool.poetry.group.test.dependencies]
 pytest = "^8.2.2"
 

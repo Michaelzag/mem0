@@ -47,16 +47,17 @@ class KuzuConnectionManager:
             logger.info(f"Initializing Kuzu database connection at {db_path}")
             self.db_path = db_path
             self.db = kuzu.Database(db_path)
-            self.conn = kuzu.Connection(self.db)
+            # Updated for Kuzu v0.8.2 API
+            self.conn = self.db.create_connection()
             self._transaction_active = False
             self._initialized = True
             
-    def get_connection(self) -> kuzu.Connection:
+    def get_connection(self):
         """
         Get the shared Kuzu connection.
         
         Returns:
-            kuzu.Connection: Shared connection instance
+            Shared connection instance
         """
         return self.conn
     
