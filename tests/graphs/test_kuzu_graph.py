@@ -97,6 +97,8 @@ def mock_config():
     config.graph_store = Mock()
     config.graph_store.config = Mock()
     config.graph_store.config.db_path = "/tmp/kuzu_test"
+    # Add history_db_path for SQLiteManager
+    config.graph_store.config.history_db_path = ":memory:"
     
     # Setup embedder and LLM config
     config.embedder = Mock()
@@ -297,13 +299,14 @@ def test_kuzu_memory_graph_get_all(mock_kuzu_connection_manager, mock_config, mo
 
 def test_kuzu_connection_manager_singleton():
     """Test that KuzuConnectionManager is a singleton per database path."""
-    # Mock the Database class to avoid actual database creation
-    with patch("kuzu.Database") as mock_db:
-        # Configure the mock to provide create_connection method
+    # Mock the Database and Connection classes to avoid actual database creation
+    with patch("kuzu.Database") as mock_db, \
+         patch("kuzu.Connection") as mock_conn:
+        # Configure the mocks
         mock_db_instance = Mock()
         mock_connection = Mock()
-        mock_db_instance.create_connection = Mock(return_value=mock_connection)
         mock_db.return_value = mock_db_instance
+        mock_conn.return_value = mock_connection
         
         # Reset singleton for test
         KuzuConnectionManager._instances = {}
@@ -326,17 +329,23 @@ def test_kuzu_connection_manager_singleton():
         # Verify Database was called with the right path
         mock_db.assert_any_call(db_path)
         mock_db.assert_any_call(db_path2)
+        
+        # Verify Connection was created with the Database instances
+        mock_conn.assert_any_call(mock_db_instance)
 
 
-@pytest.mark.parametrize("api_version", ["0.8.2"])
+@pytest.mark.parametrize("api_version", ["current"])
 def test_connection_manager_api_compatibility(api_version):
     """Test KuzuConnectionManager compatibility with Kuzu API versions."""
-    with patch("kuzu.Database") as mock_db_cls:
-        # Create mock database instance with create_connection method (v0.8.2 API)
+    with patch("kuzu.Database") as mock_db_cls, \
+         patch("kuzu.Connection") as mock_conn_cls:
+        # Create mock database instance
         mock_db_instance = Mock()
-        mock_connection = Mock()
-        mock_db_instance.create_connection = Mock(return_value=mock_connection)
         mock_db_cls.return_value = mock_db_instance
+        
+        # Create mock connection instance
+        mock_connection = Mock()
+        mock_conn_cls.return_value = mock_connection
         
         # Reset singleton for test
         KuzuConnectionManager._instances = {}
@@ -347,8 +356,8 @@ def test_connection_manager_api_compatibility(api_version):
         
         # Verify proper API usage
         mock_db_cls.assert_called_with(db_path)
-        # This verifies we're using the 0.8.2 API (create_connection)
-        mock_db_instance.create_connection.assert_called_once()
+        # This verifies we're using the current API (kuzu.Connection)
+        mock_conn_cls.assert_called_once_with(mock_db_instance)
         
         # Test get_connection method
         conn = manager.get_connection()

@@ -205,12 +205,19 @@ def test_vector_store_factory_compatibility(vector_config_factory):
     and switch between them seamlessly.
     """
     # Use patch to ensure we don't actually create a database connection
-    with patch("mem0.utils.kuzu_connection.KuzuConnectionManager") as mock_manager_cls:
+    with patch("mem0.utils.kuzu_connection.KuzuConnectionManager") as mock_manager_cls, \
+         patch("kuzu.Database") as mock_db_cls, \
+         patch("kuzu.Connection") as mock_conn_cls:
         # Setup the mock
         mock_instance = Mock()
         mock_connection = Mock()
         mock_instance.get_connection.return_value = mock_connection
         mock_manager_cls.return_value = mock_instance
+        
+        # Setup Database and Connection mocks
+        mock_db_instance = Mock()
+        mock_db_cls.return_value = mock_db_instance
+        mock_conn_cls.return_value = mock_connection
         
         # Configure for proper patching
         with patch.object(KuzuConnectionManager, "__new__", return_value=mock_instance):
@@ -264,12 +271,19 @@ def test_graph_memory_factory_compatibility(memory_config_factory):
     and switch between them seamlessly.
     """
     # Use patch to mock KuzuConnectionManager
-    with patch("mem0.utils.kuzu_connection.KuzuConnectionManager") as mock_manager_cls:
+    with patch("mem0.utils.kuzu_connection.KuzuConnectionManager") as mock_manager_cls, \
+         patch("kuzu.Database") as mock_db_cls, \
+         patch("kuzu.Connection") as mock_conn_cls:
         # Setup the mock
         mock_instance = Mock()
         mock_connection = Mock()
         mock_instance.get_connection.return_value = mock_connection
         mock_manager_cls.return_value = mock_instance
+        
+        # Setup Database and Connection mocks
+        mock_db_instance = Mock()
+        mock_db_cls.return_value = mock_db_instance
+        mock_conn_cls.return_value = mock_connection
         
         # Configure for proper patching
         with patch.object(KuzuConnectionManager, "__new__", return_value=mock_instance):
@@ -321,12 +335,19 @@ def test_memory_integration_compatibility(memory_config_factory):
     Test that the Memory class works with different graph memory implementations.
     """
     # Use patch to mock KuzuConnectionManager
-    with patch("mem0.utils.kuzu_connection.KuzuConnectionManager") as mock_manager_cls:
+    with patch("mem0.utils.kuzu_connection.KuzuConnectionManager") as mock_manager_cls, \
+         patch("kuzu.Database") as mock_db_cls, \
+         patch("kuzu.Connection") as mock_conn_cls:
         # Setup the mock
         mock_instance = Mock()
         mock_connection = Mock()
         mock_instance.get_connection.return_value = mock_connection
         mock_manager_cls.return_value = mock_instance
+        
+        # Setup Database and Connection mocks
+        mock_db_instance = Mock()
+        mock_db_cls.return_value = mock_db_instance
+        mock_conn_cls.return_value = mock_connection
         
         # Configure for proper patching
         with patch.object(KuzuConnectionManager, "__new__", return_value=mock_instance):

@@ -47,8 +47,8 @@ class KuzuConnectionManager:
             logger.info(f"Initializing Kuzu database connection at {db_path}")
             self.db_path = db_path
             self.db = kuzu.Database(db_path)
-            # Updated for Kuzu v0.8.2 API
-            self.conn = self.db.create_connection()
+            # Create a connection using the current Kuzu API
+            self.conn = kuzu.Connection(self.db)
             self._transaction_active = False
             self._initialized = True
             
