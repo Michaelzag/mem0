@@ -190,3 +190,5 @@ testing.ipynb
 
 kuzu/
 kuzu_plan/
+deprecated/
+kuzu_memory_bank/

@@ -1,5 +1,7 @@
 import json
 import logging
+import datetime
+import uuid
 from typing import Dict, List, Optional
 
 try:
@@ -12,12 +14,14 @@ try:
 except ImportError:
     raise ImportError("rank_bm25 is not installed. Please install it using pip install rank-bm25")
 
+from mem0.memory.base import MemoryBase
+from mem0.memory.storage import SQLiteManager
 from mem0.memory.utils import format_entities
 from mem0.graphs.tools import (DELETE_MEMORY_STRUCT_TOOL_GRAPH,
-                               DELETE_MEMORY_TOOL_GRAPH,
-                               EXTRACT_ENTITIES_STRUCT_TOOL,
-                               EXTRACT_ENTITIES_TOOL, RELATIONS_STRUCT_TOOL,
-                               RELATIONS_TOOL)
+                                DELETE_MEMORY_TOOL_GRAPH,
+                                EXTRACT_ENTITIES_STRUCT_TOOL,
+                                EXTRACT_ENTITIES_TOOL, RELATIONS_STRUCT_TOOL,
+                                RELATIONS_TOOL)
 from mem0.graphs.utils import EXTRACT_RELATIONS_PROMPT, get_delete_messages
 from mem0.utils.factory import EmbedderFactory, LlmFactory
 from mem0.utils.kuzu_connection import KuzuConnectionManager
@@ -25,7 +29,7 @@ from mem0.utils.kuzu_connection import KuzuConnectionManager
 logger = logging.getLogger(__name__)
 
 
-class KuzuMemoryGraph:
+class KuzuMemoryGraph(MemoryBase):
     """Graph memory implementation using Kuzu as the backend."""
     
     def __init__(self, config):
@@ -44,6 +48,10 @@ class KuzuMemoryGraph:
         # Use connection manager instead of direct connection
         self.connection_manager = KuzuConnectionManager(self.db_path)
         self.conn = self.connection_manager.get_connection()
+        
+        # Initialize SQLiteManager for history tracking
+        self.history_db_path = getattr(self.config.graph_store.config, "history_db_path", ":memory:")
+        self.storage = SQLiteManager(self.history_db_path)
         
         # Initialize embedder and LLM models (same as Neo4j implementation)
         self.embedding_model = EmbedderFactory.create(self.config.embedder.provider, self.config.embedder.config)
@@ -612,4 +620,298 @@ class KuzuMemoryGraph:
             
         except Exception as e:
             logger.error(f"Error searching for destination node: {e}")
+    def get(self, memory_id):
+        """
+        Retrieve a memory by ID.
+
+        Args:
+            memory_id (str): ID of the memory to retrieve.
+
+        Returns:
+            dict: Retrieved memory.
+        """
+        logger.info(f"Retrieving memory with ID: {memory_id}")
+        
+        try:
+            # Use numeric ID for Kuzu query if possible
+            try:
+                numeric_id = int(memory_id)
+                id_condition = f"ID(n) = {numeric_id}"
+            except ValueError:
+                # Fall back to name-based lookup if ID is not numeric
+                id_condition = "n.name = $memory_id"
+            
+            cypher_query = f"""
+                MATCH (n:Entity)
+                WHERE {id_condition}
+                RETURN n.name, n.entity_type, n.user_id, n.created
+            """
+            
+            params = {"memory_id": memory_id}
+            result = self.conn.execute(cypher_query, params)
+            
+            if not result.has_next():
+                logger.warning(f"Memory with ID {memory_id} not found")
+                return None
+                
+            row = result.get_next()
+            memory = {
+                "id": memory_id,
+                "name": row["n.name"],
+                "entity_type": row["n.entity_type"],
+                "user_id": row["n.user_id"],
+                "created": row["n.created"]
+            }
+            
+            # Get relationships involving this entity
+            related_query = f"""
+                MATCH (n:Entity)-[r:RELATED_TO]->(m:Entity)
+                WHERE {id_condition}
+                RETURN m.name AS target, r.relationship AS type
+                UNION
+                MATCH (m:Entity)-[r:RELATED_TO]->(n:Entity)
+                WHERE {id_condition}
+                RETURN m.name AS target, r.relationship AS type
+            """
+            
+            relations_result = self.conn.execute(related_query, params)
+            relationships = []
+            
+            while relations_result.has_next():
+                rel_row = relations_result.get_next()
+                relationships.append({
+                    "target": rel_row["target"],
+                    "type": rel_row["type"]
+                })
+                
+            memory["relationships"] = relationships
+            
+            logger.info(f"Successfully retrieved memory with ID {memory_id}")
+            return memory
+            
+        except Exception as e:
+            logger.error(f"Error retrieving memory: {e}")
+            return None
+    
+    def update(self, memory_id, data):
+        """
+        Update a memory by ID.
+
+        Args:
+            memory_id (str): ID of the memory to update.
+            data (dict): Data to update the memory with.
+
+        Returns:
+            dict: Updated memory.
+        """
+        logger.info(f"Updating memory with ID: {memory_id}")
+        
+        # First, get the current state of the memory
+        current_memory = self.get(memory_id)
+        if not current_memory:
+            logger.warning(f"Cannot update: Memory with ID {memory_id} not found")
+            return None
+            
+        try:
+            # Begin transaction
+            self.connection_manager.begin_transaction()
+            
+            # Use numeric ID for Kuzu query if possible
+            try:
+                numeric_id = int(memory_id)
+                id_condition = f"ID(n) = {numeric_id}"
+            except ValueError:
+                # Fall back to name-based lookup if ID is not numeric
+                id_condition = "n.name = $memory_id"
+            
+            # Update entity properties
+            update_fields = []
+            update_params = {"memory_id": memory_id}
+            
+            for key, value in data.items():
+                if key not in ["id", "relationships"]:
+                    update_fields.append(f"n.{key} = ${key}")
+                    update_params[key] = value
+                    
+            if update_fields:
+                update_query = f"""
+                    MATCH (n:Entity)
+                    WHERE {id_condition}
+                    SET {', '.join(update_fields)}
+                    RETURN n.name
+                """
+                
+                self.conn.execute(update_query, update_params)
+            
+            # Handle relationships if provided
+            if "relationships" in data:
+                # First, remove all existing relationships
+                remove_relations_query = f"""
+                    MATCH (n:Entity)-[r:RELATED_TO]->() 
+                    WHERE {id_condition}
+                    DELETE r
+                    UNION
+                    MATCH ()-[r:RELATED_TO]->(n:Entity) 
+                    WHERE {id_condition}
+                    DELETE r
+                """
+                
+                self.conn.execute(remove_relations_query, {"memory_id": memory_id})
+                
+                # Then, add new relationships
+                for rel in data["relationships"]:
+                    add_rel_query = f"""
+                        MATCH (n:Entity), (m:Entity)
+                        WHERE {id_condition} AND m.name = $target_name
+                        CREATE (n)-[:RELATED_TO {{relationship: $relationship, created: TIMESTAMP()}}]->(m)
+                    """
+                    
+                    self.conn.execute(add_rel_query, {
+                        "memory_id": memory_id,
+                        "target_name": rel["target"],
+                        "relationship": rel["type"]
+                    })
+            
+            # Commit the transaction
+            self.connection_manager.commit()
+            
+            # Record the update in history
+            self.storage.add_history(
+                memory_id=memory_id,
+                old_memory=json.dumps(current_memory),
+                new_memory=json.dumps(data),
+                event="update",
+                created_at=datetime.datetime.now().isoformat(),
+                updated_at=datetime.datetime.now().isoformat()
+            )
+            
+            # Return the updated memory
+            updated_memory = self.get(memory_id)
+            logger.info(f"Successfully updated memory with ID {memory_id}")
+            return updated_memory
+            
+        except Exception as e:
+            logger.error(f"Error updating memory: {e}")
+            # Rollback the transaction
+            self.connection_manager.rollback()
+            return None
+    
+    def delete(self, memory_id):
+        """
+        Delete a memory by ID.
+
+        Args:
+            memory_id (str): ID of the memory to delete.
+        """
+        logger.info(f"Deleting memory with ID: {memory_id}")
+        
+        # First, get the current state of the memory for history
+        current_memory = self.get(memory_id)
+        if not current_memory:
+            logger.warning(f"Cannot delete: Memory with ID {memory_id} not found")
+            return
+            
+        try:
+            # Begin transaction
+            self.connection_manager.begin_transaction()
+            
+            # Use numeric ID for Kuzu query if possible
+            try:
+                numeric_id = int(memory_id)
+                id_condition = f"ID(n) = {numeric_id}"
+            except ValueError:
+                # Fall back to name-based lookup if ID is not numeric
+                id_condition = "n.name = $memory_id"
+            
+            # Delete all relationships first
+            delete_rels_query = f"""
+                MATCH (n:Entity)-[r:RELATED_TO]->() 
+                WHERE {id_condition}
+                DELETE r
+                UNION
+                MATCH ()-[r:RELATED_TO]->(n:Entity) 
+                WHERE {id_condition}
+                DELETE r
+            """
+            
+            self.conn.execute(delete_rels_query, {"memory_id": memory_id})
+            
+            # Then delete the node
+            delete_node_query = f"""
+                MATCH (n:Entity)
+                WHERE {id_condition}
+                DELETE n
+            """
+            
+            self.conn.execute(delete_node_query, {"memory_id": memory_id})
+            
+            # Commit the transaction
+            self.connection_manager.commit()
+            
+            # Record the deletion in history
+            self.storage.add_history(
+                memory_id=memory_id,
+                old_memory=json.dumps(current_memory),
+                new_memory=None,
+                event="delete",
+                created_at=datetime.datetime.now().isoformat(),
+                updated_at=datetime.datetime.now().isoformat(),
+                is_deleted=1
+            )
+            
+            logger.info(f"Successfully deleted memory with ID {memory_id}")
+            
+        except Exception as e:
+            logger.error(f"Error deleting memory: {e}")
+            # Rollback the transaction
+            self.connection_manager.rollback()
+    
+    def history(self, memory_id):
+        """
+        Get the history of changes for a memory by ID.
+
+        Args:
+            memory_id (str): ID of the memory to get history for.
+
+        Returns:
+            list: List of changes for the memory.
+        """
+        logger.info(f"Retrieving history for memory with ID: {memory_id}")
+        
+        try:
+            # Use SQLiteManager to retrieve history
+            history_records = self.storage.get_history(memory_id)
+            
+            # Format the history records
+            formatted_history = []
+            for record in history_records:
+                formatted_entry = {
+                    "id": record["id"],
+                    "memory_id": record["memory_id"],
+                    "event": record["event"],
+                    "created_at": record["created_at"],
+                    "updated_at": record["updated_at"]
+                }
+                
+                # Parse JSON if present
+                if record["old_memory"]:
+                    try:
+                        formatted_entry["old_memory"] = json.loads(record["old_memory"])
+                    except:
+                        formatted_entry["old_memory"] = record["old_memory"]
+                        
+                if record["new_memory"]:
+                    try:
+                        formatted_entry["new_memory"] = json.loads(record["new_memory"])
+                    except:
+                        formatted_entry["new_memory"] = record["new_memory"]
+                
+                formatted_history.append(formatted_entry)
+            
+            logger.info(f"Retrieved {len(formatted_history)} history records for memory {memory_id}")
+            return formatted_history
+            
+        except Exception as e:
+            logger.error(f"Error retrieving memory history: {e}")
+            return []
             return []
